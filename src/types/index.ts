@@ -28,11 +28,13 @@ export interface RankedColor {
 export interface ImageSprite {
   filename: string;
   imagePath: string;
-  colors: {
-    main: RankedColor;
-    second: RankedColor;
-    third: RankedColor;
-  };
+  colors: RankedColor[];
+}
+
+export interface ColorExtractionSettings {
+  numColors: number;  // 1-5
+  smartDetection: boolean;
+  smartThreshold: number;  // 0-1, percentage of pixels required for a color to be considered "primary"
 }
 
 export interface GridPosition {
@@ -40,8 +42,18 @@ export interface GridPosition {
   col: number;
 }
 
+export type ImageLocation =
+  | { type: 'grid'; row: number; col: number }
+  | { type: 'bucket'; index: number };
+
+export interface SwapRecord {
+  from: ImageLocation;
+  to: ImageLocation;
+}
+
 export interface ArrangementState {
   grid: (ImageSprite | null)[][];
+  bucket: ImageSprite[];
   rows: number;
   cols: number;
 }
@@ -52,6 +64,7 @@ export interface ArrangementParams {
   sortAxis: SortAxis;
   entropyFactor: number;
   neighborRadius: number;
+  squareSmoothing: boolean;
   seed: number;
   scatterEmpty: boolean;
 }
@@ -59,3 +72,6 @@ export interface ArrangementParams {
 export type ViewMode = 'sprites' | 'colors';
 
 export type ImageSourceMode = 'default' | 'custom';
+
+// Maps "filename:colorIndex" to RGB override
+export type ColorOverrides = Map<string, RGBColor>;

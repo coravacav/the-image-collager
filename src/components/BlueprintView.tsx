@@ -58,8 +58,8 @@ export function BlueprintView({ arrangement }: Props) {
                   key={c}
                   className="px-1 rounded text-[10px]"
                   style={{
-                    backgroundColor: img ? `rgb(${img.colors.main.rgb.r}, ${img.colors.main.rgb.g}, ${img.colors.main.rgb.b})` : undefined,
-                    color: img && img.colors.main.color.l > 0.5 ? '#000' : '#fff',
+                    backgroundColor: img ? `rgb(${img.colors[0].rgb.r}, ${img.colors[0].rgb.g}, ${img.colors[0].rgb.b})` : undefined,
+                    color: img && img.colors[0].color.l > 0.5 ? '#000' : '#fff',
                   }}
                   title={img ? img.filename : 'empty'}
                 >

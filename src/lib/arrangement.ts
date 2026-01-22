@@ -1,4 +1,4 @@
-import type { ImageSprite, ArrangementState, ArrangementParams, SortAxis } from '../types';
+import type { ImageSprite, ArrangementState, ArrangementParams, SortAxis, ImageLocation } from '../types';
 import { colorDistanceOklch } from './colorSpace';
 
 // Seeded random number generator for reproducibility
@@ -11,7 +11,7 @@ function seededRandom(seed: number): () => number {
 
 // Compute a sorting score based on the chosen axis
 function computeColorScore(image: ImageSprite, axis: SortAxis): number {
-  const color = image.colors.main.color;
+  const color = image.colors[0]?.color ?? { h: 0, l: 0.5, c: 0 };
 
   switch (axis) {
     case 'hue':
@@ -49,11 +49,14 @@ function applyEntropy(
 }
 
 // Calculate how well a cell matches its neighbors (lower = better)
+// When square=false, only orthogonal neighbors are considered (cross pattern)
+// When square=true, all neighbors in the square are considered
 function neighborEnergy(
   grid: (ImageSprite | null)[][],
   row: number,
   col: number,
-  radius: number
+  radius: number,
+  square: boolean
 ): number {
   const cell = grid[row][col];
   if (!cell) return 0;
@@ -64,6 +67,8 @@ function neighborEnergy(
   for (let dr = -radius; dr <= radius; dr++) {
     for (let dc = -radius; dc <= radius; dc++) {
       if (dr === 0 && dc === 0) continue;
+      // Skip diagonal neighbors if not using square mode
+      if (!square && dr !== 0 && dc !== 0) continue;
 
       const nr = row + dr;
       const nc = col + dc;
@@ -71,7 +76,7 @@ function neighborEnergy(
       if (nr >= 0 && nr < grid.length && nc >= 0 && nc < grid[0].length) {
         const neighbor = grid[nr][nc];
         if (neighbor) {
-          totalDist += colorDistanceOklch(cell.colors.main.color, neighbor.colors.main.color);
+          totalDist += colorDistanceOklch(cell.colors[0].color, neighbor.colors[0].color);
           count++;
         }
       }
@@ -85,6 +90,7 @@ function neighborEnergy(
 function optimizeLocalSmoothness(
   grid: (ImageSprite | null)[][],
   radius: number,
+  square: boolean,
   rng: () => number,
   iterations: number = 1000
 ): void {
@@ -114,16 +120,16 @@ function optimizeLocalSmoothness(
 
     // Calculate current energy
     const currentEnergy =
-      neighborEnergy(grid, r1, c1, radius) +
-      neighborEnergy(grid, r2, c2, radius);
+      neighborEnergy(grid, r1, c1, radius, square) +
+      neighborEnergy(grid, r2, c2, radius, square);
 
     // Swap
     [grid[r1][c1], grid[r2][c2]] = [grid[r2][c2], grid[r1][c1]];
 
     // Calculate new energy
     const newEnergy =
-      neighborEnergy(grid, r1, c1, radius) +
-      neighborEnergy(grid, r2, c2, radius);
+      neighborEnergy(grid, r1, c1, radius, square) +
+      neighborEnergy(grid, r2, c2, radius, square);
 
     // Accept if better, or with probability based on temperature
     const temperature = 1 - i / iterations;
@@ -139,22 +145,44 @@ export function arrangeImages(
   images: ImageSprite[],
   rows: number,
   cols: number,
-  params: ArrangementParams
+  params: ArrangementParams,
+  inclusionMask?: boolean[]
 ): ArrangementState {
   const rng = seededRandom(params.seed);
 
   // Score and sort
-  const scored = images.map(img => ({
+  const scored = images.map((img, i) => ({
     image: img,
+    index: i,
     score: computeColorScore(img, params.sortAxis),
   }));
   scored.sort((a, b) => a.score - b.score);
 
-  // Extract sorted images
-  const sorted = scored.map(s => s.image);
+  // Apply inclusion mask if provided - filter to only included images
+  let gridImages: ImageSprite[];
+  let bucketImages: ImageSprite[];
 
-  // Apply entropy
-  const shuffled = applyEntropy(sorted, params.entropyFactor, rng);
+  if (inclusionMask && inclusionMask.length === images.length) {
+    // Separate images based on inclusion mask (in sorted order)
+    gridImages = [];
+    bucketImages = [];
+    for (const s of scored) {
+      if (inclusionMask[s.index]) {
+        gridImages.push(s.image);
+      } else {
+        bucketImages.push(s.image);
+      }
+    }
+  } else {
+    // No mask - put what fits in grid, rest in bucket
+    const totalCells = rows * cols;
+    const sorted = scored.map(s => s.image);
+    gridImages = sorted.slice(0, totalCells);
+    bucketImages = sorted.slice(totalCells);
+  }
+
+  // Apply entropy to grid images
+  const shuffled = applyEntropy(gridImages, params.entropyFactor, rng);
 
   // Create grid
   const grid: (ImageSprite | null)[][] = Array.from(
@@ -206,13 +234,13 @@ export function arrangeImages(
 
   // Optimize local smoothness
   if (params.neighborRadius > 0) {
-    optimizeLocalSmoothness(grid, params.neighborRadius, rng, 2000);
+    optimizeLocalSmoothness(grid, params.neighborRadius, params.squareSmoothing, rng, 2000);
   }
 
-  return { grid, rows, cols };
+  return { grid, bucket: bucketImages, rows, cols };
 }
 
-// Swap two images in the grid
+// Swap two images in the grid (legacy - use applySwap for unified handling)
 export function swapInGrid(
   arrangement: ArrangementState,
   pos1: { row: number; col: number },
@@ -228,4 +256,73 @@ export function swapInGrid(
     ...arrangement,
     grid: newGrid,
   };
+}
+
+// Unified swap function for grid↔grid, grid↔bucket, bucket↔bucket
+export function applySwap(
+  arrangement: ArrangementState,
+  from: ImageLocation,
+  to: ImageLocation
+): ArrangementState {
+  const newGrid = arrangement.grid.map(row => [...row]);
+  const newBucket = [...arrangement.bucket];
+
+  // Get images at both locations
+  let fromImage: ImageSprite | null;
+  let toImage: ImageSprite | null;
+
+  if (from.type === 'grid') {
+    fromImage = newGrid[from.row]?.[from.col] ?? null;
+  } else {
+    fromImage = newBucket[from.index] ?? null;
+  }
+
+  if (to.type === 'grid') {
+    toImage = newGrid[to.row]?.[to.col] ?? null;
+  } else {
+    toImage = newBucket[to.index] ?? null;
+  }
+
+  // Apply the swap
+  if (from.type === 'grid') {
+    newGrid[from.row][from.col] = toImage;
+  } else {
+    if (toImage) {
+      newBucket[from.index] = toImage;
+    } else {
+      // If swapping with null/empty grid cell, remove from bucket
+      newBucket.splice(from.index, 1);
+    }
+  }
+
+  if (to.type === 'grid') {
+    newGrid[to.row][to.col] = fromImage;
+  } else {
+    if (fromImage) {
+      if (to.index < newBucket.length) {
+        newBucket[to.index] = fromImage;
+      } else {
+        // Append to bucket if index is beyond current length
+        newBucket.push(fromImage);
+      }
+    }
+  }
+
+  return {
+    ...arrangement,
+    grid: newGrid,
+    bucket: newBucket,
+  };
+}
+
+// Get image at a location
+export function getImageAtLocation(
+  arrangement: ArrangementState,
+  location: ImageLocation
+): ImageSprite | null {
+  if (location.type === 'grid') {
+    return arrangement.grid[location.row]?.[location.col] ?? null;
+  } else {
+    return arrangement.bucket[location.index] ?? null;
+  }
 }

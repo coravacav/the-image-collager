@@ -1,5 +1,11 @@
-import type { RGBColor, ColorPosition, RankedColor } from '../types';
+import type { RGBColor, ColorPosition, RankedColor, ColorExtractionSettings } from '../types';
 import { rgbToOklch, colorDistanceLab } from './colorSpace';
+
+export const DEFAULT_COLOR_SETTINGS: ColorExtractionSettings = {
+  numColors: 3,
+  smartDetection: false,
+  smartThreshold: 0.1,  // 10% of pixels
+};
 
 interface PixelData {
   color: RGBColor;
@@ -7,11 +13,12 @@ interface PixelData {
   y: number;
 }
 
-// Load image and extract pixel data
+// Load image and extract pixel data, returning a blob URL for local caching
 export async function extractPixelData(imagePath: string): Promise<{
   pixels: PixelData[];
   width: number;
   height: number;
+  blobUrl: string;
 }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -56,7 +63,16 @@ export async function extractPixelData(imagePath: string): Promise<{
         pixels.push({ color: { r, g, b }, x, y });
       }
 
-      resolve({ pixels, width: img.width, height: img.height });
+      // Convert canvas to blob URL for local caching (no more network requests)
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const blobUrl = URL.createObjectURL(blob);
+          resolve({ pixels, width: img.width, height: img.height, blobUrl });
+        } else {
+          // Fallback to original path if blob creation fails
+          resolve({ pixels, width: img.width, height: img.height, blobUrl: imagePath });
+        }
+      }, 'image/png');
     };
 
     img.onerror = () => reject(new Error(`Failed to load image: ${imagePath}`));
@@ -187,13 +203,15 @@ function computeColorPosition(
   }
 }
 
-// Extract colors from an image
-export async function extractColors(imagePath: string): Promise<{
-  main: RankedColor;
-  second: RankedColor;
-  third: RankedColor;
+// Extract colors from an image and return a blob URL for local caching
+export async function extractColors(
+  imagePath: string,
+  settings: ColorExtractionSettings = DEFAULT_COLOR_SETTINGS
+): Promise<{
+  colors: RankedColor[];
+  blobUrl: string;
 }> {
-  const { pixels, width, height } = await extractPixelData(imagePath);
+  const { pixels, width, height, blobUrl } = await extractPixelData(imagePath);
 
   if (pixels.length === 0) {
     // Fallback for images with no valid pixels
@@ -203,13 +221,22 @@ export async function extractColors(imagePath: string): Promise<{
       position: 'center',
       pixelCount: 0,
     };
-    return { main: defaultColor, second: defaultColor, third: defaultColor };
+    return { colors: [defaultColor], blobUrl };
   }
 
-  const clusters = kMeansClustering(pixels, 3);
+  // Determine number of colors to extract
+  let numColors = settings.numColors;
+
+  if (settings.smartDetection) {
+    // For smart detection, cluster with max colors (5) first
+    numColors = 5;
+  }
+
+  const clusters = kMeansClustering(pixels, numColors);
+  const totalPixels = pixels.length;
 
   // Sort by pixel count (most pixels = main color)
-  const sorted = clusters
+  let sorted = clusters
     .map(cluster => ({
       rgb: cluster.centroid,
       color: rgbToOklch(cluster.centroid),
@@ -218,19 +245,37 @@ export async function extractColors(imagePath: string): Promise<{
     }))
     .sort((a, b) => b.pixelCount - a.pixelCount);
 
-  // Ensure we have 3 colors (pad with gray if needed)
-  while (sorted.length < 3) {
-    sorted.push({
-      color: { l: 0.5, c: 0, h: 0 },
-      rgb: { r: 128, g: 128, b: 128 },
-      position: 'center',
-      pixelCount: 0,
-    });
+  if (settings.smartDetection) {
+    // Filter to only colors that meet the threshold
+    const thresholdCount = totalPixels * settings.smartThreshold;
+    sorted = sorted.filter(c => c.pixelCount >= thresholdCount);
+
+    // Ensure at least one color
+    if (sorted.length === 0) {
+      sorted = [clusters
+        .map(cluster => ({
+          rgb: cluster.centroid,
+          color: rgbToOklch(cluster.centroid),
+          position: computeColorPosition(cluster.pixels, width, height),
+          pixelCount: cluster.pixels.length,
+        }))
+        .sort((a, b) => b.pixelCount - a.pixelCount)[0]];
+    }
+  } else {
+    // Fixed number: ensure we have exactly numColors (pad with gray if needed)
+    while (sorted.length < settings.numColors) {
+      sorted.push({
+        color: { l: 0.5, c: 0, h: 0 },
+        rgb: { r: 128, g: 128, b: 128 },
+        position: 'center',
+        pixelCount: 0,
+      });
+    }
+    sorted = sorted.slice(0, settings.numColors);
   }
 
   return {
-    main: sorted[0],
-    second: sorted[1],
-    third: sorted[2],
+    colors: sorted,
+    blobUrl,
   };
 }
