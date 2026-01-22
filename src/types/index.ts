@@ -53,6 +53,7 @@ export interface ArrangementParams {
   entropyFactor: number;
   neighborRadius: number;
   seed: number;
+  scatterEmpty: boolean;
 }
 
 export type ViewMode = 'sprites' | 'colors';

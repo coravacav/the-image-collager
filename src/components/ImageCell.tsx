@@ -29,7 +29,20 @@ export function ImageCell({
 }: Props) {
   if (!image) {
     return (
-      <div className="aspect-square bg-gray-700 rounded opacity-30" />
+      <div
+        draggable
+        onDragStart={onDragStart}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        onDragEnd={onDragEnd}
+        className={`
+          aspect-square bg-gray-700 rounded opacity-30 cursor-grab active:cursor-grabbing
+          transition-all duration-150
+          ${isDragging ? 'opacity-10 scale-95' : ''}
+          ${isDragOver ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-800 opacity-50' : ''}
+        `}
+      />
     );
   }
 

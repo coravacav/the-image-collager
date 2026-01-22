@@ -5,25 +5,32 @@ import { arrangeImages, swapInGrid } from './lib/arrangement';
 import { ImageGrid } from './components/ImageGrid';
 import { ArrangementControls } from './components/ArrangementControls';
 import { GridControls } from './components/GridControls';
-import { SourceGridControls } from './components/SourceGridControls';
 import { ViewModeToggle } from './components/ViewModeToggle';
 import { BlueprintView } from './components/BlueprintView';
 import { ImageSourceControls } from './components/ImageSourceControls';
 import { ImageUploadModal } from './components/ImageUploadModal';
+
+// Auto-discover all pokemon images at build time
+const pokemonImages = import.meta.glob('/public/pokemon/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 
 const DEFAULT_PARAMS: ArrangementParams = {
   sortAxis: 'hue',
   entropyFactor: 0.2,
   neighborRadius: 1,
   seed: 42,
+  scatterEmpty: false,
 };
+
+// Get sorted list of pokemon image paths from the glob
+const defaultImagePaths = Object.keys(pokemonImages)
+  .map(path => path.replace('/public', ''))
+  .sort();
 
 function App() {
   const [images, setImages] = useState<ImageSprite[]>([]);
   const [arrangement, setArrangement] = useState<ArrangementState | null>(null);
   const [params, setParams] = useState<ArrangementParams>(DEFAULT_PARAMS);
   const [gridSize, setGridSize] = useState({ rows: 11, cols: 14 });
-  const [sourceGrid, setSourceGrid] = useState({ rows: 8, cols: 19, lastRowCols: 18 });
   const [viewMode, setViewMode] = useState<ViewMode>('sprites');
   const [isLoading, setIsLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -32,33 +39,16 @@ function App() {
   const [isProcessingUpload, setIsProcessingUpload] = useState(false);
   const customBlobUrlsRef = useRef<string[]>([]);
 
-  // Generate filenames based on source grid config
-  const generateFilenames = useCallback(() => {
-    const filenames: string[] = [];
-
-    for (let row = 1; row <= sourceGrid.rows; row++) {
-      const colCount = row === sourceGrid.rows ? sourceGrid.lastRowCols : sourceGrid.cols;
-      for (let col = 1; col <= colCount; col++) {
-        const rowStr = row.toString().padStart(2, '0');
-        const colStr = col.toString().padStart(2, '0');
-        filenames.push(`Pasted Layer-${rowStr}-${colStr}.png`);
-      }
-    }
-
-    return filenames;
-  }, [sourceGrid]);
-
   // Load and process all images
   const loadImages = useCallback(async () => {
     setIsLoading(true);
     setLoadingProgress(0);
 
-    const filenames = generateFilenames();
     const loaded: ImageSprite[] = [];
 
-    for (let i = 0; i < filenames.length; i++) {
-      const filename = filenames[i];
-      const imagePath = `/pokemon/${filename}`;
+    for (let i = 0; i < defaultImagePaths.length; i++) {
+      const imagePath = defaultImagePaths[i];
+      const filename = imagePath.split('/').pop() || imagePath;
 
       try {
         const colors = await extractColors(imagePath);
@@ -71,14 +61,14 @@ function App() {
         console.error(`Failed to process ${filename}:`, error);
       }
 
-      setLoadingProgress(((i + 1) / filenames.length) * 100);
+      setLoadingProgress(((i + 1) / defaultImagePaths.length) * 100);
     }
 
     setImages(loaded);
     setIsLoading(false);
-  }, [generateFilenames]);
+  }, []);
 
-  // Load images on mount and when source grid changes
+  // Load images on mount
   useEffect(() => {
     loadImages();
   }, [loadImages]);
@@ -210,18 +200,13 @@ function App() {
             onResetToDefault={handleResetToDefault}
           />
           <ViewModeToggle mode={viewMode} onChange={setViewMode} />
-          {imageSourceMode === 'default' && (
-            <SourceGridControls
-              sourceGrid={sourceGrid}
-              onChange={setSourceGrid}
-              imageCount={images.length}
-            />
-          )}
           <GridControls
             rows={gridSize.rows}
             cols={gridSize.cols}
             imageCount={images.length}
+            scatterEmpty={params.scatterEmpty}
             onChange={setGridSize}
+            onScatterEmptyChange={(value) => setParams(p => ({ ...p, scatterEmpty: value }))}
           />
           <ArrangementControls
             params={params}

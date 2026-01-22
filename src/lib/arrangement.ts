@@ -162,11 +162,45 @@ export function arrangeImages(
     () => Array(cols).fill(null)
   );
 
-  // Place images into grid (left-to-right, top-to-bottom)
-  let idx = 0;
-  for (let r = 0; r < rows && idx < shuffled.length; r++) {
-    for (let c = 0; c < cols && idx < shuffled.length; c++) {
-      grid[r][c] = shuffled[idx++];
+  const totalCells = rows * cols;
+  const emptyCount = Math.max(0, totalCells - shuffled.length);
+
+  if (params.scatterEmpty && emptyCount > 0) {
+    // Scatter empty cells randomly throughout the grid
+    const allPositions: [number, number][] = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        allPositions.push([r, c]);
+      }
+    }
+
+    // Shuffle positions using Fisher-Yates
+    for (let i = allPositions.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [allPositions[i], allPositions[j]] = [allPositions[j], allPositions[i]];
+    }
+
+    // First emptyCount positions will be empty, rest get images
+    const emptyPositions = new Set(
+      allPositions.slice(0, emptyCount).map(([r, c]) => `${r},${c}`)
+    );
+
+    // Place images in non-empty positions
+    let idx = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (!emptyPositions.has(`${r},${c}`) && idx < shuffled.length) {
+          grid[r][c] = shuffled[idx++];
+        }
+      }
+    }
+  } else {
+    // Place images into grid (left-to-right, top-to-bottom)
+    let idx = 0;
+    for (let r = 0; r < rows && idx < shuffled.length; r++) {
+      for (let c = 0; c < cols && idx < shuffled.length; c++) {
+        grid[r][c] = shuffled[idx++];
+      }
     }
   }
 
