@@ -7,6 +7,7 @@ interface Props {
   viewMode: ViewMode;
   isDragging: boolean;
   isDragOver: boolean;
+  isHovered: boolean;
   onDragStart: () => void;
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: () => void;
@@ -19,6 +20,7 @@ export function PokemonCell({
   viewMode,
   isDragging,
   isDragOver,
+  isHovered,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -47,6 +49,7 @@ export function PokemonCell({
         group transition-all duration-150
         ${isDragging ? 'opacity-50 scale-95' : ''}
         ${isDragOver ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-800' : ''}
+        ${isHovered ? 'ring-2 ring-white/50 z-10' : ''}
       `}
     >
       {viewMode === 'sprites' ? (
