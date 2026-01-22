@@ -203,12 +203,10 @@ function computeColorPosition(
   }
 }
 
-// Extract colors from an image and return a blob URL for local caching
-export async function extractColors(
-  imagePath: string,
-  settings: ColorExtractionSettings = DEFAULT_COLOR_SETTINGS
-): Promise<{
-  colors: RankedColor[];
+// Extract all 5 colors from an image (always extracts max for caching)
+export async function extractColors(imagePath: string): Promise<{
+  allColors: RankedColor[];
+  totalPixels: number;
   blobUrl: string;
 }> {
   const { pixels, width, height, blobUrl } = await extractPixelData(imagePath);
@@ -221,22 +219,15 @@ export async function extractColors(
       position: 'center',
       pixelCount: 0,
     };
-    return { colors: [defaultColor], blobUrl };
+    return { allColors: [defaultColor], totalPixels: 0, blobUrl };
   }
 
-  // Determine number of colors to extract
-  let numColors = settings.numColors;
-
-  if (settings.smartDetection) {
-    // For smart detection, cluster with max colors (5) first
-    numColors = 5;
-  }
-
-  const clusters = kMeansClustering(pixels, numColors);
+  // Always extract 5 colors for caching
+  const clusters = kMeansClustering(pixels, 5);
   const totalPixels = pixels.length;
 
   // Sort by pixel count (most pixels = main color)
-  let sorted = clusters
+  const allColors = clusters
     .map(cluster => ({
       rgb: cluster.centroid,
       color: rgbToOklch(cluster.centroid),
@@ -245,37 +236,42 @@ export async function extractColors(
     }))
     .sort((a, b) => b.pixelCount - a.pixelCount);
 
+  return { allColors, totalPixels, blobUrl };
+}
+
+// Derive active colors from cached data based on current settings
+export function deriveActiveColors(
+  allColors: RankedColor[],
+  totalPixels: number,
+  settings: ColorExtractionSettings
+): RankedColor[] {
+  if (allColors.length === 0) {
+    return [{
+      color: { l: 0.5, c: 0, h: 0 },
+      rgb: { r: 128, g: 128, b: 128 },
+      position: 'center',
+      pixelCount: 0,
+    }];
+  }
+
   if (settings.smartDetection) {
     // Filter to only colors that meet the threshold
     const thresholdCount = totalPixels * settings.smartThreshold;
-    sorted = sorted.filter(c => c.pixelCount >= thresholdCount);
+    const filtered = allColors.filter(c => c.pixelCount >= thresholdCount);
 
     // Ensure at least one color
-    if (sorted.length === 0) {
-      sorted = [clusters
-        .map(cluster => ({
-          rgb: cluster.centroid,
-          color: rgbToOklch(cluster.centroid),
-          position: computeColorPosition(cluster.pixels, width, height),
-          pixelCount: cluster.pixels.length,
-        }))
-        .sort((a, b) => b.pixelCount - a.pixelCount)[0]];
-    }
+    return filtered.length > 0 ? filtered : [allColors[0]];
   } else {
-    // Fixed number: ensure we have exactly numColors (pad with gray if needed)
-    while (sorted.length < settings.numColors) {
-      sorted.push({
+    // Fixed number: take exactly numColors (pad with gray if needed)
+    const result = [...allColors];
+    while (result.length < settings.numColors) {
+      result.push({
         color: { l: 0.5, c: 0, h: 0 },
         rgb: { r: 128, g: 128, b: 128 },
         position: 'center',
         pixelCount: 0,
       });
     }
-    sorted = sorted.slice(0, settings.numColors);
+    return result.slice(0, settings.numColors);
   }
-
-  return {
-    colors: sorted,
-    blobUrl,
-  };
 }

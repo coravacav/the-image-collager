@@ -1,7 +1,26 @@
 import type { ImageLocation, SwapRecord, RGBColor } from '../types';
 
-// State code format: v3:<imageSetHash>:<seed>:<inclusionBase64>:<swapsBase64>:<colorOverridesBase64>
-// imageSetHash: hash of sorted filenames to detect mismatched image sets
+// State code format: <seed4>:<inclusionBase64>:<swapsBase64>:<colorOverridesBase64>:<imageSetHash>
+// seed4: 4-character base36 seed (36^4 = 1,679,616 combinations)
+// imageSetHash: hash of sorted filenames to detect mismatched image sets (at end for readability)
+
+// Max seed value for 4 base36 characters
+export const MAX_SEED = 36 ** 4 - 1; // 1,679,615
+
+// Convert seed number to 4-character base36 string
+export function seedToString(seed: number): string {
+  return seed.toString(36).padStart(4, '0');
+}
+
+// Convert 4-character base36 string to seed number
+export function stringToSeed(str: string): number {
+  return parseInt(str, 36);
+}
+
+// Generate a random seed
+export function randomSeed(): number {
+  return Math.floor(Math.random() * (MAX_SEED + 1));
+}
 
 // Simple hash function for image set (djb2 algorithm)
 export function hashImageSet(filenames: string[]): string {
@@ -206,38 +225,40 @@ export function encodeStateCode(
   colorOverrides: ColorOverrideEntry[] = []
 ): string {
   const imageSetHash = hashImageSet(filenames);
-  const inclusionBytes = packBits(inclusionMask);
-  const swapBytes = encodeSwaps(swaps);
-  const colorOverrideBytes = encodeColorOverrides(colorOverrides);
 
-  const inclusionBase64 = toBase64(inclusionBytes);
-  const swapsBase64 = toBase64(swapBytes);
-  const colorOverridesBase64 = toBase64(colorOverrideBytes);
+  // If all images are included, use empty string for compactness
+  const allIncluded = inclusionMask.every(v => v);
+  const inclusionBase64 = allIncluded ? '' : toBase64(packBits(inclusionMask));
 
-  return `v3:${imageSetHash}:${seed}:${inclusionBase64}:${swapsBase64}:${colorOverridesBase64}`;
+  const swapsBase64 = toBase64(encodeSwaps(swaps));
+  const colorOverridesBase64 = toBase64(encodeColorOverrides(colorOverrides));
+
+  return `${seedToString(seed)}:${inclusionBase64}:${swapsBase64}:${colorOverridesBase64}:${imageSetHash}`;
 }
 
 // Decode a state code string back to data
 export function decodeStateCode(code: string, filenames: string[]): StateCodeData | null {
   try {
     const parts = code.split(':');
-    if (parts[0] !== 'v3' || parts.length !== 6) return null;
+    if (parts.length !== 5) return null;
 
-    const codeHash = parts[1];
-    const currentHash = hashImageSet(filenames);
-    const hashMismatch = codeHash !== currentHash;
+    const seed = stringToSeed(parts[0]);
+    if (isNaN(seed) || seed < 0 || seed > MAX_SEED) return null;
 
-    const seed = parseInt(parts[2], 10);
-    if (isNaN(seed)) return null;
+    // Empty inclusion string means all images included
+    const inclusionMask = parts[1]
+      ? unpackBits(fromBase64(parts[1]), filenames.length)
+      : filenames.map(() => true);
 
-    const inclusionBytes = fromBase64(parts[3]);
-    const inclusionMask = unpackBits(inclusionBytes, filenames.length);
-
-    const swapBytes = fromBase64(parts[4]);
+    const swapBytes = fromBase64(parts[2]);
     const swaps = decodeSwaps(swapBytes);
 
-    const colorOverrideBytes = fromBase64(parts[5]);
+    const colorOverrideBytes = fromBase64(parts[3]);
     const colorOverrides = decodeColorOverrides(colorOverrideBytes);
+
+    const codeHash = parts[4];
+    const currentHash = hashImageSet(filenames);
+    const hashMismatch = codeHash !== currentHash;
 
     return { seed, inclusionMask, swaps, colorOverrides, hashMismatch };
   } catch {
@@ -248,10 +269,13 @@ export function decodeStateCode(code: string, filenames: string[]): StateCodeDat
 // Validate a state code format (doesn't check if it applies to current images)
 export function isValidStateCode(code: string): boolean {
   const parts = code.split(':');
-  if (parts[0] !== 'v3' || parts.length !== 6) return false;
+  if (parts.length !== 5) return false;
 
-  const seed = parseInt(parts[2], 10);
-  if (isNaN(seed)) return false;
+  // Seed should be alphanumeric (base36)
+  if (!/^[0-9a-z]+$/i.test(parts[0])) return false;
+
+  const seed = stringToSeed(parts[0]);
+  if (isNaN(seed) || seed < 0 || seed > MAX_SEED) return false;
 
   return true;
 }

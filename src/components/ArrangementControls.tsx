@@ -1,4 +1,4 @@
-import type { ArrangementParams, SortAxis } from '../types';
+import type { ArrangementParams } from '../types';
 
 interface Props {
   params: ArrangementParams;

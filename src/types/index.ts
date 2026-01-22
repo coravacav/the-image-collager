@@ -29,6 +29,8 @@ export interface ImageSprite {
   filename: string;
   imagePath: string;
   colors: RankedColor[];
+  allColors: RankedColor[];  // Always 5 colors from k-means clustering
+  totalPixels: number;       // Total non-filtered pixels for threshold calculation
 }
 
 export interface ColorExtractionSettings {
@@ -66,10 +68,7 @@ export interface ArrangementParams {
   neighborRadius: number;
   squareSmoothing: boolean;
   seed: number;
-  scatterEmpty: boolean;
 }
-
-export type ViewMode = 'sprites' | 'colors';
 
 export type ImageSourceMode = 'default' | 'custom';
 

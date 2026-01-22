@@ -2,14 +2,11 @@ interface Props {
   rows: number;
   cols: number;
   imageCount: number;
-  scatterEmpty: boolean;
   onChange: (size: { rows: number; cols: number }) => void;
-  onScatterEmptyChange: (value: boolean) => void;
 }
 
-export function GridControls({ rows, cols, imageCount, scatterEmpty, onChange, onScatterEmptyChange }: Props) {
+export function GridControls({ rows, cols, imageCount, onChange }: Props) {
   const totalCells = rows * cols;
-  const hasEmptyCells = totalCells > imageCount;
 
   return (
     <div className="bg-gray-800 p-4 rounded-lg">
@@ -51,18 +48,6 @@ export function GridControls({ rows, cols, imageCount, scatterEmpty, onChange, o
             ? `${totalCells - imageCount} empty`
             : <span className="text-red-400 font-medium">{imageCount - totalCells} won't fit</span>})
         </div>
-
-        {hasEmptyCells && (
-          <label className="flex items-center gap-2 text-sm pt-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={scatterEmpty}
-              onChange={(e) => onScatterEmptyChange(e.target.checked)}
-              className="w-4 h-4 accent-blue-500"
-            />
-            <span>Scatter empty cells</span>
-          </label>
-        )}
       </div>
     </div>
   );

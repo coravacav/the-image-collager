@@ -1,11 +1,10 @@
 import { useState } from "react";
-import type { ArrangementState, ViewMode, ImageSprite, ImageLocation, RGBColor } from "../types";
+import type { ArrangementState, ImageSprite, ImageLocation, RGBColor } from "../types";
 import { ImageCell } from "./ImageCell";
-import { rgbToHex } from "../lib/colorSpace";
+import { rgbToHex, colorDistanceOklch } from "../lib/colorSpace";
 
 interface Props {
 	arrangement: ArrangementState;
-	viewMode: ViewMode;
 	onSwap: (from: ImageLocation, to: ImageLocation) => void;
 	draggedLocation: ImageLocation | null;
 	onDragStart: (location: ImageLocation) => void;
@@ -16,7 +15,6 @@ interface Props {
 
 export function ImageGrid({
 	arrangement,
-	viewMode,
 	onSwap,
 	draggedLocation,
 	onDragStart,
@@ -96,18 +94,46 @@ export function ImageGrid({
 		return colorOverrides.get(key) ?? image.colors[colorIndex].rgb;
 	};
 
+	// Find the best matching color pair between two images (most similar colors)
+	const getBestMatchingColors = (
+		imageA: ImageSprite,
+		imageB: ImageSprite
+	): { colorA: RGBColor; colorB: RGBColor } => {
+		let bestDist = Infinity;
+		let bestIndexA = 0;
+		let bestIndexB = 0;
+
+		for (let i = 0; i < imageA.colors.length; i++) {
+			for (let j = 0; j < imageB.colors.length; j++) {
+				const dist = colorDistanceOklch(imageA.colors[i].color, imageB.colors[j].color);
+				if (dist < bestDist) {
+					bestDist = dist;
+					bestIndexA = i;
+					bestIndexB = j;
+				}
+			}
+		}
+
+		return {
+			colorA: getEffectiveColor(imageA, bestIndexA),
+			colorB: getEffectiveColor(imageB, bestIndexB),
+		};
+	};
+
 	// Render connection bar between two adjacent cells
 	const renderConnectionBar = (row: number, col: number, direction: "bottom" | "right") => {
 		const image = grid[row]?.[col];
-		if (!image) return null;
+		if (!image || image.colors.length === 0) return null;
 
 		const neighborRow = direction === "bottom" ? row + 1 : row;
 		const neighborCol = direction === "right" ? col + 1 : col;
 		const neighbor = grid[neighborRow]?.[neighborCol];
-		if (!neighbor) return null;
+		if (!neighbor || neighbor.colors.length === 0) return null;
 
-		const imageColor = rgbToHex(getEffectiveColor(image, 0));
-		const neighborColor = rgbToHex(getEffectiveColor(neighbor, 0));
+		// Use the best matching color pair between the two images
+		const { colorA, colorB } = getBestMatchingColors(image, neighbor);
+		const imageColor = rgbToHex(colorA);
+		const neighborColor = rgbToHex(colorB);
 
 		const isVertical = direction === "bottom";
 		const gradientDirection = isVertical ? "to bottom" : "to right";
@@ -148,7 +174,7 @@ export function ImageGrid({
 
 	// Calculate connection bar positions for hovered cell (with enhanced styling)
 	const renderHoveredConnectionBars = () => {
-		if (!hoveredPos || !hoveredImage) return null;
+		if (!hoveredPos || !hoveredImage || hoveredImage.colors.length === 0) return null;
 
 		const neighbors = [
 			{ dr: -1, dc: 0, direction: "top" },
@@ -159,10 +185,12 @@ export function ImageGrid({
 
 		return neighbors.map(({ dr, dc, direction }) => {
 			const neighbor = getNeighbor(dr, dc);
-			if (!neighbor) return null;
+			if (!neighbor || neighbor.colors.length === 0) return null;
 
-			const hoveredColor = rgbToHex(getEffectiveColor(hoveredImage, 0));
-			const neighborColor = rgbToHex(getEffectiveColor(neighbor, 0));
+			// Use the best matching color pair between the two images
+			const { colorA, colorB } = getBestMatchingColors(hoveredImage, neighbor);
+			const hoveredColor = rgbToHex(colorA);
+			const neighborColor = rgbToHex(colorB);
 
 			let style: React.CSSProperties = {
 				position: "absolute",
@@ -248,7 +276,6 @@ export function ImageGrid({
 					>
 						<ImageCell
 							image={image}
-							viewMode={viewMode}
 							isDragging={isDraggedPos(r, c)}
 							isDragOver={dragOverPos?.row === r && dragOverPos?.col === c}
 							isHovered={hoveredPos?.row === r && hoveredPos?.col === c}

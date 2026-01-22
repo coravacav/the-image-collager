@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import type { ImageSprite, ArrangementState, ArrangementParams, ViewMode, ImageSourceMode, ImageLocation, SwapRecord, ColorExtractionSettings, RGBColor } from './types';
-import { extractColors, DEFAULT_COLOR_SETTINGS } from './lib/colorExtraction';
+import type { ImageSprite, ArrangementState, ArrangementParams, ImageSourceMode, ImageLocation, SwapRecord, ColorExtractionSettings, RGBColor } from './types';
+import { extractColors, deriveActiveColors, DEFAULT_COLOR_SETTINGS } from './lib/colorExtraction';
 import { arrangeImages, applySwap } from './lib/arrangement';
-import { encodeStateCode, decodeStateCode, ColorOverrideEntry } from './lib/stateEncoding';
+import { encodeStateCode, decodeStateCode, ColorOverrideEntry, randomSeed } from './lib/stateEncoding';
 import { ImageGrid } from './components/ImageGrid';
 import { ArrangementControls } from './components/ArrangementControls';
 import { GridControls } from './components/GridControls';
-import { ViewModeToggle } from './components/ViewModeToggle';
 import { BlueprintView } from './components/BlueprintView';
 import { ImageUploadModal } from './components/ImageUploadModal';
 import { ImageBucket } from './components/ImageBucket';
@@ -22,7 +21,6 @@ const DEFAULT_PARAMS: ArrangementParams = {
   neighborRadius: 1,
   squareSmoothing: false,
   seed: 42,
-  scatterEmpty: false,
 };
 
 // Get sorted list of pokemon image paths from the glob
@@ -35,7 +33,6 @@ function App() {
   const [arrangement, setArrangement] = useState<ArrangementState | null>(null);
   const [params, setParams] = useState<ArrangementParams>(DEFAULT_PARAMS);
   const [gridSize, setGridSize] = useState({ rows: 11, cols: 14 });
-  const [viewMode, setViewMode] = useState<ViewMode>('sprites');
   const [isLoading, setIsLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [imageSourceMode, setImageSourceMode] = useState<ImageSourceMode>('default');
@@ -54,8 +51,8 @@ function App() {
   // Warning for image set mismatch
   const [hashMismatchWarning, setHashMismatchWarning] = useState(false);
 
-  // Load and process all images
-  const loadImages = useCallback(async (settings: ColorExtractionSettings = colorSettings) => {
+  // Load and process all images (extracts all 5 colors for caching)
+  const loadImages = useCallback(async () => {
     setIsLoading(true);
     setLoadingProgress(0);
     lastLoadedPathsRef.current = defaultImagePaths;
@@ -67,11 +64,13 @@ function App() {
       const filename = imagePath.split('/').pop() || imagePath;
 
       try {
-        const { colors, blobUrl } = await extractColors(imagePath, settings);
+        const { allColors, totalPixels, blobUrl } = await extractColors(imagePath);
         loaded.push({
           filename,
-          imagePath: blobUrl, // Use blob URL for local caching (no network requests on regenerate)
-          colors,
+          imagePath: blobUrl,
+          colors: [], // Will be derived via useMemo
+          allColors,
+          totalPixels,
         });
       } catch (error) {
         console.error(`Failed to process ${filename}:`, error);
@@ -83,7 +82,15 @@ function App() {
     setImages(loaded);
     setHashMismatchWarning(false);
     setIsLoading(false);
-  }, [colorSettings]);
+  }, []);
+
+  // Derive images with active colors based on current settings (instant, no reload)
+  const imagesWithActiveColors = useMemo(() => {
+    return images.map(img => ({
+      ...img,
+      colors: deriveActiveColors(img.allColors, img.totalPixels, colorSettings),
+    }));
+  }, [images, colorSettings]);
 
   // Load images on mount
   useEffect(() => {
@@ -92,15 +99,15 @@ function App() {
 
   // Generate arrangement when images load or params change
   useEffect(() => {
-    if (images.length > 0) {
+    if (imagesWithActiveColors.length > 0) {
       const totalCells = gridSize.rows * gridSize.cols;
       // Create initial inclusion mask: first N images are in grid
-      const newInclusionMask = images.map((_, i) => i < totalCells);
+      const newInclusionMask = imagesWithActiveColors.map((_, i) => i < totalCells);
       setInclusionMask(newInclusionMask);
       setSwaps([]);
 
       const newArrangement = arrangeImages(
-        images,
+        imagesWithActiveColors,
         gridSize.rows,
         gridSize.cols,
         params,
@@ -108,22 +115,22 @@ function App() {
       );
       setArrangement(newArrangement);
     }
-  }, [images, gridSize, params]);
+  }, [imagesWithActiveColors, gridSize, params]);
 
   const handleRegenerate = useCallback(() => {
-    if (images.length > 0) {
-      const newSeed = Math.floor(Math.random() * 10000);
+    if (imagesWithActiveColors.length > 0) {
+      const newSeed = randomSeed();
       const newParams = { ...params, seed: newSeed };
       setParams(newParams);
 
       const totalCells = gridSize.rows * gridSize.cols;
-      const newInclusionMask = images.map((_, i) => i < totalCells);
+      const newInclusionMask = imagesWithActiveColors.map((_, i) => i < totalCells);
       setInclusionMask(newInclusionMask);
       setSwaps([]);
       setHashMismatchWarning(false);
 
       const newArrangement = arrangeImages(
-        images,
+        imagesWithActiveColors,
         gridSize.rows,
         gridSize.cols,
         newParams,
@@ -131,7 +138,7 @@ function App() {
       );
       setArrangement(newArrangement);
     }
-  }, [images, gridSize, params]);
+  }, [imagesWithActiveColors, gridSize, params]);
 
   // Unified swap handler for grid↔grid, grid↔bucket, bucket↔bucket
   const handleSwap = useCallback((from: ImageLocation, to: ImageLocation) => {
@@ -153,13 +160,13 @@ function App() {
           }
         }
         // Update mask based on current positions
-        for (let i = 0; i < images.length; i++) {
-          newMask[i] = gridImages.has(images[i].filename);
+        for (let i = 0; i < imagesWithActiveColors.length; i++) {
+          newMask[i] = gridImages.has(imagesWithActiveColors[i].filename);
         }
         return newMask;
       });
     }
-  }, [arrangement, images]);
+  }, [arrangement, imagesWithActiveColors]);
 
   const handleDragStart = useCallback((location: ImageLocation) => {
     setDraggedLocation(location);
@@ -196,14 +203,16 @@ function App() {
       const fileBlobUrl = URL.createObjectURL(file);
 
       try {
-        const { colors, blobUrl } = await extractColors(fileBlobUrl, colorSettings);
+        const { allColors, totalPixels, blobUrl } = await extractColors(fileBlobUrl);
         // Revoke the file blob URL since we now have a canvas-based blob URL
         URL.revokeObjectURL(fileBlobUrl);
         customBlobUrlsRef.current.push(blobUrl);
         loaded.push({
           filename: file.name,
           imagePath: blobUrl,
-          colors,
+          colors: [], // Will be derived via useMemo
+          allColors,
+          totalPixels,
         });
       } catch (error) {
         console.error(`Failed to process ${file.name}:`, error);
@@ -225,7 +234,7 @@ function App() {
     const cols = Math.ceil(Math.sqrt(count * 1.4));
     const rows = Math.ceil(count / cols);
     setGridSize({ rows, cols });
-  }, [colorSettings]);
+  }, []);
 
   // Reset to default Pokemon images
   const handleResetToDefault = useCallback(() => {
@@ -238,16 +247,10 @@ function App() {
     loadImages();
   }, [loadImages]);
 
-  // Handle color settings change - re-extract colors with new settings
+  // Handle color settings change (colors derive automatically via useMemo)
   const handleColorSettingsChange = useCallback((newSettings: ColorExtractionSettings) => {
     setColorSettings(newSettings);
-    // Re-load images with new color settings
-    if (imageSourceMode === 'default') {
-      loadImages(newSettings);
-    }
-    // For custom images, we'd need to store the original files to re-process
-    // For now, custom images will only apply new settings on next upload
-  }, [imageSourceMode, loadImages]);
+  }, []);
 
   // Cleanup blob URLs on unmount
   useEffect(() => {
@@ -261,7 +264,7 @@ function App() {
     const entries: ColorOverrideEntry[] = [];
     for (const [key, rgb] of colorOverrides) {
       const [filename, colorIndexStr] = key.split(':');
-      const imageIndex = images.findIndex(img => img.filename === filename);
+      const imageIndex = imagesWithActiveColors.findIndex(img => img.filename === filename);
       if (imageIndex !== -1) {
         entries.push({
           imageIndex,
@@ -271,18 +274,18 @@ function App() {
       }
     }
     return entries;
-  }, [colorOverrides, images]);
+  }, [colorOverrides, imagesWithActiveColors]);
 
   // Generate state code from current state
   const stateCode = useMemo(() => {
-    if (images.length === 0) return '';
-    const filenames = images.map(img => img.filename);
+    if (imagesWithActiveColors.length === 0) return '';
+    const filenames = imagesWithActiveColors.map(img => img.filename);
     return encodeStateCode(filenames, params.seed, inclusionMask, swaps, colorOverrideEntries);
-  }, [params.seed, inclusionMask, swaps, colorOverrideEntries, images]);
+  }, [params.seed, inclusionMask, swaps, colorOverrideEntries, imagesWithActiveColors]);
 
   // Apply a pasted state code
   const handleApplyCode = useCallback((code: string) => {
-    const filenames = images.map(img => img.filename);
+    const filenames = imagesWithActiveColors.map(img => img.filename);
     const decoded = decodeStateCode(code, filenames);
     if (!decoded) return;
 
@@ -298,7 +301,7 @@ function App() {
 
     // Generate base arrangement with new params and mask
     let newArrangement = arrangeImages(
-      images,
+      imagesWithActiveColors,
       gridSize.rows,
       gridSize.cols,
       newParams,
@@ -316,14 +319,14 @@ function App() {
     // Apply color overrides
     const newColorOverrides = new Map<string, RGBColor>();
     for (const override of decoded.colorOverrides) {
-      const image = images[override.imageIndex];
+      const image = imagesWithActiveColors[override.imageIndex];
       if (image) {
         const key = `${image.filename}:${override.colorIndex}`;
         newColorOverrides.set(key, override.rgb);
       }
     }
     setColorOverrides(newColorOverrides);
-  }, [images, gridSize, params]);
+  }, [imagesWithActiveColors, gridSize, params]);
 
   if (isLoading) {
     return (
@@ -373,14 +376,11 @@ function App() {
             settings={colorSettings}
             onChange={handleColorSettingsChange}
           />
-          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
           <GridControls
             rows={gridSize.rows}
             cols={gridSize.cols}
-            imageCount={images.length}
-            scatterEmpty={params.scatterEmpty}
+            imageCount={imagesWithActiveColors.length}
             onChange={setGridSize}
-            onScatterEmptyChange={(value) => setParams(p => ({ ...p, scatterEmpty: value }))}
           />
           <ArrangementControls
             params={params}
@@ -395,7 +395,6 @@ function App() {
             <>
               <ImageGrid
                 arrangement={arrangement}
-                viewMode={viewMode}
                 onSwap={handleSwap}
                 draggedLocation={draggedLocation}
                 onDragStart={handleDragStart}
@@ -405,7 +404,6 @@ function App() {
               />
               <ImageBucket
                 images={arrangement.bucket}
-                viewMode={viewMode}
                 onSwap={handleSwap}
                 draggedLocation={draggedLocation}
                 onDragStart={handleDragStart}

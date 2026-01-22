@@ -10,8 +10,13 @@ function seededRandom(seed: number): () => number {
 }
 
 // Compute a sorting score based on the chosen axis
+// Uses primary color for sorting, but arrangement optimization considers all colors
 function computeColorScore(image: ImageSprite, axis: SortAxis): number {
-  const color = image.colors[0]?.color ?? { h: 0, l: 0.5, c: 0 };
+  if (image.colors.length === 0) {
+    return axis === 'lightness' ? 0.5 : 0;
+  }
+
+  const color = image.colors[0].color;
 
   switch (axis) {
     case 'hue':
@@ -48,6 +53,23 @@ function applyEntropy(
   return result;
 }
 
+// Find the minimum color distance between any pair of colors from two images
+// This allows images sharing ANY similar color to be considered good neighbors
+function minColorDistance(a: ImageSprite, b: ImageSprite): number {
+  let minDist = Infinity;
+
+  for (const colorA of a.colors) {
+    for (const colorB of b.colors) {
+      const dist = colorDistanceOklch(colorA.color, colorB.color);
+      if (dist < minDist) {
+        minDist = dist;
+      }
+    }
+  }
+
+  return minDist === Infinity ? 0 : minDist;
+}
+
 // Calculate how well a cell matches its neighbors (lower = better)
 // When square=false, only orthogonal neighbors are considered (cross pattern)
 // When square=true, all neighbors in the square are considered
@@ -59,7 +81,7 @@ function neighborEnergy(
   square: boolean
 ): number {
   const cell = grid[row][col];
-  if (!cell) return 0;
+  if (!cell || cell.colors.length === 0) return 0;
 
   let totalDist = 0;
   let count = 0;
@@ -75,8 +97,8 @@ function neighborEnergy(
 
       if (nr >= 0 && nr < grid.length && nc >= 0 && nc < grid[0].length) {
         const neighbor = grid[nr][nc];
-        if (neighbor) {
-          totalDist += colorDistanceOklch(cell.colors[0].color, neighbor.colors[0].color);
+        if (neighbor && neighbor.colors.length > 0) {
+          totalDist += minColorDistance(cell, neighbor);
           count++;
         }
       }
@@ -190,45 +212,11 @@ export function arrangeImages(
     () => Array(cols).fill(null)
   );
 
-  const totalCells = rows * cols;
-  const emptyCount = Math.max(0, totalCells - shuffled.length);
-
-  if (params.scatterEmpty && emptyCount > 0) {
-    // Scatter empty cells randomly throughout the grid
-    const allPositions: [number, number][] = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        allPositions.push([r, c]);
-      }
-    }
-
-    // Shuffle positions using Fisher-Yates
-    for (let i = allPositions.length - 1; i > 0; i--) {
-      const j = Math.floor(rng() * (i + 1));
-      [allPositions[i], allPositions[j]] = [allPositions[j], allPositions[i]];
-    }
-
-    // First emptyCount positions will be empty, rest get images
-    const emptyPositions = new Set(
-      allPositions.slice(0, emptyCount).map(([r, c]) => `${r},${c}`)
-    );
-
-    // Place images in non-empty positions
-    let idx = 0;
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (!emptyPositions.has(`${r},${c}`) && idx < shuffled.length) {
-          grid[r][c] = shuffled[idx++];
-        }
-      }
-    }
-  } else {
-    // Place images into grid (left-to-right, top-to-bottom)
-    let idx = 0;
-    for (let r = 0; r < rows && idx < shuffled.length; r++) {
-      for (let c = 0; c < cols && idx < shuffled.length; c++) {
-        grid[r][c] = shuffled[idx++];
-      }
+  // Place images into grid (left-to-right, top-to-bottom)
+  let idx = 0;
+  for (let r = 0; r < rows && idx < shuffled.length; r++) {
+    for (let c = 0; c < cols && idx < shuffled.length; c++) {
+      grid[r][c] = shuffled[idx++];
     }
   }
 

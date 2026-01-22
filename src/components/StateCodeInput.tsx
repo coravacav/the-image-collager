@@ -78,7 +78,7 @@ export function StateCodeInput({ stateCode, onApplyCode, hashMismatchWarning, on
     }
   }, [stateCode]);
 
-  const hasChanges = inputValue !== stateCode && isValid;
+  const hasChanges = isEditing && inputValue !== stateCode && isValid;
 
   return (
     <div className="bg-gray-800 rounded-lg p-3">
@@ -107,17 +107,13 @@ export function StateCodeInput({ stateCode, onApplyCode, hashMismatchWarning, on
               ${isValid ? 'border-gray-700' : 'border-red-500'}
               ${hasChanges ? 'border-yellow-500' : ''}
             `}
-            placeholder="v3:hash:seed:..."
+            placeholder="seed:data:...:hash"
           />
-          {!isValid && (
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 text-red-500 text-xs">
-              Invalid
-            </div>
-          )}
         </div>
 
         {hasChanges && (
           <button
+            onMouseDown={(e) => e.preventDefault()}
             onClick={handleApply}
             className="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium transition-colors"
           >
@@ -129,6 +125,18 @@ export function StateCodeInput({ stateCode, onApplyCode, hashMismatchWarning, on
       <p className="text-xs text-gray-500 mt-2">
         Paste a code to restore an arrangement, or copy to share
       </p>
+
+      {!isValid && isEditing && (
+        <div className="mt-2 p-2 bg-red-900/50 border border-red-600 rounded text-xs text-red-200 flex items-start gap-2">
+          <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+          </svg>
+          <div className="flex-1">
+            <p className="font-medium">Invalid format</p>
+            <p className="text-red-300/80">State code should have 5 colon-separated parts.</p>
+          </div>
+        </div>
+      )}
 
       {hashMismatchWarning && (
         <div className="mt-2 p-2 bg-yellow-900/50 border border-yellow-600 rounded text-xs text-yellow-200 flex items-start gap-2">

@@ -1,11 +1,10 @@
 import { useState, useRef } from 'react';
-import type { ImageSprite, ViewMode, ImageLocation, RGBColor } from '../types';
+import type { ImageSprite, ImageLocation, RGBColor } from '../types';
 import { rgbToHex, hexToRgb } from '../lib/colorSpace';
 import { getDisplayName } from '../lib/imageData';
 
 interface Props {
   images: ImageSprite[];
-  viewMode: ViewMode;
   onSwap: (from: ImageLocation, to: ImageLocation) => void;
   draggedLocation: ImageLocation | null;
   onDragStart: (location: ImageLocation) => void;
@@ -16,7 +15,6 @@ interface Props {
 
 export function ImageBucket({
   images,
-  viewMode,
   onSwap,
   draggedLocation,
   onDragStart,
@@ -118,7 +116,6 @@ export function ImageBucket({
                 <BucketItem
                   key={`${image.filename}-${index}`}
                   image={image}
-                  viewMode={viewMode}
                   isDragging={isDragging}
                   isDragOver={isDragOver}
                   onDragStart={() => handleDragStart(index)}
@@ -140,7 +137,6 @@ export function ImageBucket({
 
 interface BucketItemProps {
   image: ImageSprite;
-  viewMode: ViewMode;
   isDragging: boolean;
   isDragOver: boolean;
   onDragStart: () => void;
@@ -154,7 +150,6 @@ interface BucketItemProps {
 
 function BucketItem({
   image,
-  viewMode,
   isDragging,
   isDragOver,
   onDragStart,
@@ -173,12 +168,6 @@ function BucketItem({
   // Get effective color (with override if present)
   const getEffectiveColor = (index: number): RGBColor => {
     return colorOverrides.get(index) ?? colors[index].rgb;
-  };
-
-  // Calculate flex weights for color blob view (decreasing importance)
-  const getFlexWeight = (index: number, total: number): number => {
-    if (total === 1) return 1;
-    return total - index;
   };
 
   const handleColorClick = (e: React.MouseEvent, colorIndex: number) => {
@@ -220,26 +209,12 @@ function BucketItem({
         onChange={handleColorChange}
       />
 
-      {viewMode === 'sprites' ? (
-        <img
-          src={image.imagePath}
-          alt={displayName}
-          className="w-full h-full object-contain"
-          draggable={false}
-        />
-      ) : (
-        <div className="w-full h-full flex flex-col rounded overflow-hidden">
-          {colors.map((_, i) => (
-            <div
-              key={i}
-              style={{
-                flex: getFlexWeight(i, colors.length),
-                backgroundColor: rgbToHex(getEffectiveColor(i)),
-              }}
-            />
-          ))}
-        </div>
-      )}
+      <img
+        src={image.imagePath}
+        alt={displayName}
+        className="w-full h-full object-contain"
+        draggable={false}
+      />
 
       {/* Hover tooltip with color edit */}
       <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center rounded z-10">

@@ -1,11 +1,10 @@
 import { useState, useRef } from 'react';
-import type { ImageSprite, ViewMode, RGBColor } from '../types';
+import type { ImageSprite, RGBColor } from '../types';
 import { rgbToHex, hexToRgb } from '../lib/colorSpace';
 import { getDisplayName } from '../lib/imageData';
 
 interface Props {
   image: ImageSprite | null;
-  viewMode: ViewMode;
   isDragging: boolean;
   isDragOver: boolean;
   isHovered: boolean;
@@ -20,7 +19,6 @@ interface Props {
 
 export function ImageCell({
   image,
-  viewMode,
   isDragging,
   isDragOver,
   isHovered,
@@ -79,12 +77,6 @@ export function ImageCell({
   const colors = image.colors;
   const displayName = getDisplayName(image.filename);
 
-  // Calculate flex weights for color blob view (decreasing importance)
-  const getFlexWeight = (index: number, total: number): number => {
-    if (total === 1) return 1;
-    return total - index;
-  };
-
   return (
     <div
       draggable
@@ -110,28 +102,12 @@ export function ImageCell({
         onChange={handleColorChange}
       />
 
-      {viewMode === 'sprites' ? (
-        /* Sprite image */
-        <img
-          src={image.imagePath}
-          alt={displayName}
-          className="w-full h-full object-contain"
-          draggable={false}
-        />
-      ) : (
-        /* Color blob view - just the colors */
-        <div className="w-full h-full flex flex-col rounded overflow-hidden">
-          {colors.map((_, i) => (
-            <div
-              key={i}
-              style={{
-                flex: getFlexWeight(i, colors.length),
-                backgroundColor: rgbToHex(getEffectiveColor(i)),
-              }}
-            />
-          ))}
-        </div>
-      )}
+      <img
+        src={image.imagePath}
+        alt={displayName}
+        className="w-full h-full object-contain"
+        draggable={false}
+      />
 
       {/* Hover tooltip with larger color boxes and edit capability */}
       <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center p-1 rounded">

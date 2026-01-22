@@ -53,19 +53,22 @@ export function BlueprintView({ arrangement }: Props) {
           <div key={r} className="flex items-start gap-1">
             <span className="text-gray-500 w-5 flex-shrink-0">{r + 1}:</span>
             <div className="flex flex-wrap gap-1">
-              {row.map((img, c) => (
-                <span
-                  key={c}
-                  className="px-1 rounded text-[10px]"
-                  style={{
-                    backgroundColor: img ? `rgb(${img.colors[0].rgb.r}, ${img.colors[0].rgb.g}, ${img.colors[0].rgb.b})` : undefined,
-                    color: img && img.colors[0].color.l > 0.5 ? '#000' : '#fff',
-                  }}
-                  title={img ? img.filename : 'empty'}
-                >
-                  {img ? getDisplayName(img.filename) : '-'}
-                </span>
-              ))}
+              {row.map((img, c) => {
+                const primaryColor = img?.colors[0];
+                return (
+                  <span
+                    key={c}
+                    className="px-1 rounded text-[10px]"
+                    style={{
+                      backgroundColor: primaryColor ? `rgb(${primaryColor.rgb.r}, ${primaryColor.rgb.g}, ${primaryColor.rgb.b})` : undefined,
+                      color: primaryColor && primaryColor.color.l > 0.5 ? '#000' : '#fff',
+                    }}
+                    title={img ? img.filename : 'empty'}
+                  >
+                    {img ? getDisplayName(img.filename) : '-'}
+                  </span>
+                );
+              })}
             </div>
           </div>
         ))}
