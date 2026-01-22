@@ -1,9 +1,3 @@
-{
-	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "the-image-collager",
-	"compatibility_date": "2025-01-21",
-}
-
 name = "the-image-collager"
 compatibility_date = "2026-01-21"
 [assets]
