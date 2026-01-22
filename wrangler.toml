@@ -1,6 +1,11 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "the-image-collager",
-	"pages_build_output_dir": "dist",
 	"compatibility_date": "2025-01-21",
 }
+
+name = "the-image-collager"
+compatibility_date = "2026-01-21"
+[assets]
+directory = "./dist"
+binding = "ASSETS"
