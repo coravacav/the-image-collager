@@ -68,21 +68,12 @@ export function ArrangementControls({ params, onChange, onRegenerate }: Props) {
       {/* Seed */}
       <div>
         <label className="block text-sm mb-1">Seed</label>
-        <div className="flex gap-2">
-          <input
-            type="number"
-            value={params.seed}
-            onChange={(e) => onChange({ ...params, seed: +e.target.value })}
-            className="flex-1 bg-gray-700 rounded px-3 py-2 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"
-          />
-          <button
-            onClick={() => onChange({ ...params, seed: Math.floor(Math.random() * 10000) })}
-            className="px-3 py-2 bg-gray-700 rounded hover:bg-gray-600 transition-colors"
-            title="Random seed"
-          >
-            Dice
-          </button>
-        </div>
+        <input
+          type="number"
+          value={params.seed}
+          onChange={(e) => onChange({ ...params, seed: +e.target.value })}
+          className="w-full bg-gray-700 rounded px-3 py-2 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"
+        />
       </div>
 
       {/* Regenerate Button */}
