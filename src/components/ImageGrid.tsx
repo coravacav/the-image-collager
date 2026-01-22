@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ArrangementState, ViewMode, ImageSprite } from '../types';
-import { PokemonCell } from './PokemonCell';
+import { ImageCell } from './ImageCell';
 import { rgbToHex } from '../lib/colorSpace';
 
 interface Props {
@@ -9,7 +9,7 @@ interface Props {
   onSwap: (pos1: { row: number; col: number }, pos2: { row: number; col: number }) => void;
 }
 
-export function PokemonGrid({ arrangement, viewMode, onSwap }: Props) {
+export function ImageGrid({ arrangement, viewMode, onSwap }: Props) {
   const { grid, cols } = arrangement;
   const [draggedPos, setDraggedPos] = useState<{ row: number; col: number } | null>(null);
   const [dragOverPos, setDragOverPos] = useState<{ row: number; col: number } | null>(null);
@@ -163,7 +163,7 @@ export function PokemonGrid({ arrangement, viewMode, onSwap }: Props) {
             onMouseEnter={() => setHoveredPos({ row: r, col: c })}
             onMouseLeave={() => setHoveredPos(null)}
           >
-            <PokemonCell
+            <ImageCell
               image={image}
               viewMode={viewMode}
               isDragging={draggedPos?.row === r && draggedPos?.col === c}

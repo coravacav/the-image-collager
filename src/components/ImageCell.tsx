@@ -15,7 +15,7 @@ interface Props {
   onDragEnd: () => void;
 }
 
-export function PokemonCell({
+export function ImageCell({
   image,
   viewMode,
   isDragging,

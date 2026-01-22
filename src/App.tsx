@@ -1,13 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
-import type { ImageSprite, ArrangementState, ArrangementParams, ViewMode } from './types';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import type { ImageSprite, ArrangementState, ArrangementParams, ViewMode, ImageSourceMode } from './types';
 import { extractColors } from './lib/colorExtraction';
 import { arrangeImages, swapInGrid } from './lib/arrangement';
-import { PokemonGrid } from './components/PokemonGrid';
+import { ImageGrid } from './components/ImageGrid';
 import { ArrangementControls } from './components/ArrangementControls';
 import { GridControls } from './components/GridControls';
 import { SourceGridControls } from './components/SourceGridControls';
 import { ViewModeToggle } from './components/ViewModeToggle';
 import { BlueprintView } from './components/BlueprintView';
+import { ImageSourceControls } from './components/ImageSourceControls';
+import { ImageUploadModal } from './components/ImageUploadModal';
 
 const DEFAULT_PARAMS: ArrangementParams = {
   sortAxis: 'hue',
@@ -25,6 +27,10 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('sprites');
   const [isLoading, setIsLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [imageSourceMode, setImageSourceMode] = useState<ImageSourceMode>('default');
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isProcessingUpload, setIsProcessingUpload] = useState(false);
+  const customBlobUrlsRef = useRef<string[]>([]);
 
   // Generate filenames based on source grid config
   const generateFilenames = useCallback(() => {
@@ -111,6 +117,68 @@ function App() {
     }
   }, [arrangement]);
 
+  // Process custom uploaded images
+  const processCustomImages = useCallback(async (files: File[]) => {
+    setIsProcessingUpload(true);
+    setIsLoading(true);
+    setLoadingProgress(0);
+
+    // Revoke old blob URLs
+    customBlobUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
+    customBlobUrlsRef.current = [];
+
+    const loaded: ImageSprite[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const blobUrl = URL.createObjectURL(file);
+      customBlobUrlsRef.current.push(blobUrl);
+
+      try {
+        const colors = await extractColors(blobUrl);
+        loaded.push({
+          filename: file.name,
+          imagePath: blobUrl,
+          colors,
+        });
+      } catch (error) {
+        console.error(`Failed to process ${file.name}:`, error);
+      }
+
+      setLoadingProgress(((i + 1) / files.length) * 100);
+    }
+
+    setImages(loaded);
+    setImageSourceMode('custom');
+    setIsUploadModalOpen(false);
+    setIsProcessingUpload(false);
+    setIsLoading(false);
+
+    // Auto-calculate grid size based on image count
+    const count = loaded.length;
+    const cols = Math.ceil(Math.sqrt(count * 1.4));
+    const rows = Math.ceil(count / cols);
+    setGridSize({ rows, cols });
+  }, []);
+
+  // Reset to default Pokemon images
+  const handleResetToDefault = useCallback(() => {
+    // Revoke custom blob URLs
+    customBlobUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
+    customBlobUrlsRef.current = [];
+
+    setImageSourceMode('default');
+    setGridSize({ rows: 11, cols: 14 });
+    loadImages();
+  }, [loadImages]);
+
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      customBlobUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
+    };
+  }, []);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center">
@@ -136,12 +204,19 @@ function App() {
       <div className="flex gap-4">
         {/* Left sidebar - Controls */}
         <aside className="w-72 space-y-4 flex-shrink-0">
-          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
-          <SourceGridControls
-            sourceGrid={sourceGrid}
-            onChange={setSourceGrid}
-            imageCount={images.length}
+          <ImageSourceControls
+            mode={imageSourceMode}
+            onUploadClick={() => setIsUploadModalOpen(true)}
+            onResetToDefault={handleResetToDefault}
           />
+          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+          {imageSourceMode === 'default' && (
+            <SourceGridControls
+              sourceGrid={sourceGrid}
+              onChange={setSourceGrid}
+              imageCount={images.length}
+            />
+          )}
           <GridControls
             rows={gridSize.rows}
             cols={gridSize.cols}
@@ -158,7 +233,7 @@ function App() {
         {/* Main content - Grid */}
         <main className="flex-1 min-w-0">
           {arrangement && (
-            <PokemonGrid
+            <ImageGrid
               arrangement={arrangement}
               viewMode={viewMode}
               onSwap={handleSwap}
@@ -171,6 +246,14 @@ function App() {
           <BlueprintView arrangement={arrangement} />
         </aside>
       </div>
+
+      {/* Upload Modal */}
+      <ImageUploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onConfirm={processCustomImages}
+        isProcessing={isProcessingUpload}
+      />
     </div>
   );
 }

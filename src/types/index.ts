@@ -56,3 +56,5 @@ export interface ArrangementParams {
 }
 
 export type ViewMode = 'sprites' | 'colors';
+
+export type ImageSourceMode = 'default' | 'custom';
