@@ -1,5 +1,7 @@
 name = "the-image-collager"
+main = "cloudflare.js"
 compatibility_date = "2026-01-21"
 [assets]
 directory = "./dist"
 binding = "ASSETS"
+not_found_handling = "single-page-application"
